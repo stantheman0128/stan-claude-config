@@ -55,6 +55,7 @@ eval "$(echo "$input" | jq -r '
   @sh "thinking_on=\(.thinking.enabled // false)",
   @sh "fast_mode=\(.fast_mode // false)",
   @sh "session_name=\(.session_name // "")",
+  @sh "session_id=\(.session_id // "")",
   @sh "cc_version=\(.version // "")"
 ')"
 
@@ -229,7 +230,20 @@ L1="${model_display}"
 [ -n "$mode_badge" ] && L1+=" ${mode_badge}"
 L1+=" ${SEP} ${BWHITE}${display_path}${RST}"
 if [ -n "$session_name" ] && [ "$session_name" != "null" ]; then
-  L1+=" ${SEP} ${GRAY}❝${RST}${GOLD}${session_name}${RST}${GRAY}❞${RST}"
+  # CC feeds the in-memory name (may be Simplified). Convert to Traditional for
+  # display, cached per session so OpenCC only runs when the name changes.
+  sn_disp="$session_name"
+  cache_file="/tmp/claude-sn-${session_id}.cache"
+  craw=""; cconv=""
+  [ -r "$cache_file" ] && IFS=$'\t' read -r craw cconv < "$cache_file"
+  if [ "$session_name" = "$craw" ]; then
+    sn_disp="$cconv"
+  else
+    conv=$(printf '%s' "$session_name" | py -c "import sys; from opencc import OpenCC; sys.stdout.reconfigure(encoding='utf-8'); sys.stdout.write(OpenCC('s2twp').convert(sys.stdin.read()))" 2>/dev/null)
+    [ -n "$conv" ] && sn_disp="$conv"
+    printf '%s\t%s' "$session_name" "$sn_disp" > "$cache_file" 2>/dev/null
+  fi
+  L1+=" ${SEP} ${GRAY}❝${RST}${GOLD}${sn_disp}${RST}${GRAY}❞${RST}"
 fi
 
 [ -n "$git_info" ] && L1+=" ${SEP} ${git_info}"
@@ -323,3 +337,9 @@ if [ -n "$cc_version" ] && [ "$cc_version" != "null" ]; then
 fi
 
 echo -e "$L2"
+
+# Set the terminal title to the Traditional-converted session name via an OSC
+# escape (CC's own title-setting is disabled via CLAUDE_CODE_DISABLE_TERMINAL_TITLE).
+if [ -n "$sn_disp" ]; then
+  printf '\033]0;%s\007' "$sn_disp"
+fi
