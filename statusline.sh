@@ -7,6 +7,8 @@ echo "$input" > /tmp/claude-statusline-debug.json
 # ── Colors ──────────────────────────────────────────
 RST='\033[0m'
 BOLD='\033[1m'
+DIM='\033[2m'
+IT='\033[3m'
 CYAN='\033[36m'
 BCYAN='\033[1;36m'
 GREEN='\033[32m'
@@ -22,6 +24,7 @@ MAGENTA='\033[35m'
 BMAGENTA='\033[1;35m'
 BLUE='\033[34m'
 BBLUE='\033[1;34m'
+GOLD='\033[38;5;214m'
 
 SEP="${CYAN}│${RST}"
 
@@ -46,7 +49,13 @@ eval "$(echo "$input" | jq -r '
   @sh "rl_7d_reset=\(.rate_limits.seven_day.resets_at // "")",
   @sh "agent_name=\(.agent.name // "")",
   @sh "wt_name=\(.worktree.name // "")",
-  @sh "wt_orig_branch=\(.worktree.original_branch // "")"
+  @sh "wt_orig_branch=\(.worktree.original_branch // "")",
+  @sh "effort_level=\(.effort.level // "")",
+  @sh "cost_usd=\(.cost.total_cost_usd // 0)",
+  @sh "thinking_on=\(.thinking.enabled // false)",
+  @sh "fast_mode=\(.fast_mode // false)",
+  @sh "session_name=\(.session_name // "")",
+  @sh "cc_version=\(.version // "")"
 ')"
 
 # ── Helpers ─────────────────────────────────────────
@@ -150,10 +159,16 @@ rate_color_pct() {
 
 # ── Derived values ──────────────────────────────────
 
-# Full path with ~ abbreviation for home
+# Path relative to the Projects root: short at a repo root, but keeps the
+# repo + subdir context when nested. Falls back to folder name elsewhere.
 clean_cwd=$(echo "$cwd" | tr '\\' '/')
-home_unix=$(echo "$HOME" | tr '\\' '/')
-display_path="${clean_cwd/#$home_unix/\~}"
+case "$clean_cwd" in
+  */Projects/*) rel="${clean_cwd#*/Projects/}" ;;
+  */Projects)   rel="Projects" ;;
+  *)            rel="${clean_cwd##*/}" ;;
+esac
+[ -z "$rel" ] && rel="$clean_cwd"
+display_path="📁 ${rel}"
 
 # Context breakdown percentages
 in_pct=0 out_pct=0
@@ -167,10 +182,30 @@ ctx_label=""
 if [ "$ctx_size" -ge 1000000 ]; then ctx_label="1M"
 elif [ "$ctx_size" -ge 200000 ]; then ctx_label="200k"
 fi
-model_display="${BCYAN}${model}${RST}"
-if [ -n "$ctx_label" ] && ! echo "$model" | grep -qi "context\|${ctx_label}"; then
-  model_display+="${CYAN}(${ctx_label})${RST}"
+# Strip context info from model name, then re-add in white
+clean_model=$(echo "$model" | sed -E 's/ *\([^)]*context[^)]*\)//i; s/ *\([^)]*[0-9]+[kKmM][^)]*\)//; s/ +$//')
+model_display="${BCYAN}${clean_model}${RST}"
+if [ -n "$ctx_label" ]; then
+  model_display+=" ${WHITE}(${ctx_label})${RST}"
 fi
+
+# Effort level badge — color by intensity
+effort_badge=""
+if [ -n "$effort_level" ] && [ "$effort_level" != "null" ]; then
+  case "$effort_level" in
+    low)         ec="$GRAY" ;;
+    medium|med)  ec="$BCYAN" ;;
+    high)        ec="$BYELLOW" ;;
+    xhigh|max)   ec="$BRED" ;;
+    *)           ec="$WHITE" ;;
+  esac
+  effort_badge="${ec}⚡${effort_level}${RST}"
+fi
+
+# Thinking / Fast mode indicators
+mode_badge=""
+[ "$thinking_on" = "true" ] && mode_badge+="${BMAGENTA}🧠${RST}"
+[ "$fast_mode" = "true" ] && mode_badge+="${BYELLOW}🚀${RST}"
 
 # Git
 git_info=""
@@ -188,7 +223,13 @@ fi
 # ════════════════════════════════════════════════════
 # LINE 1: Identity + Path + Activity
 # ════════════════════════════════════════════════════
-L1="${model_display} ${SEP} ${BWHITE}${display_path}${RST}"
+L1="${model_display}"
+[ -n "$effort_badge" ] && L1+=" ${effort_badge}"
+[ -n "$mode_badge" ] && L1+=" ${mode_badge}"
+L1+=" ${SEP} ${BWHITE}${display_path}${RST}"
+if [ -n "$session_name" ] && [ "$session_name" != "null" ]; then
+  L1+=" ${SEP} ${GRAY}❝${RST}${GOLD}${session_name}${RST}${GRAY}❞${RST}"
+fi
 
 [ -n "$git_info" ] && L1+=" ${SEP} ${git_info}"
 
@@ -201,13 +242,26 @@ if [ "$total_in" -gt 0 ] || [ "$total_out" -gt 0 ]; then
   L1+=" ${SEP} ${tok}"
 fi
 
+# Session cost (USD)
+cost_str=$(awk "BEGIN { printf \"%.2f\", $cost_usd }" 2>/dev/null)
+if [ -n "$cost_str" ] && awk "BEGIN { exit !($cost_usd > 0) }"; then
+  L1+=" ${SEP} ${BGREEN}\$${cost_str}${RST}"
+fi
+
 # Lines changed
 if [ "$lines_add" -gt 0 ] || [ "$lines_del" -gt 0 ]; then
-  L1+=" ${SEP} ${GREEN}+${lines_add}${RST} ${RED}-${lines_del}${RST}"
+  lines_str=""
+  [ "$lines_add" -gt 0 ] && lines_str+="${GREEN}+${lines_add}${RST}"
+  if [ "$lines_del" -gt 0 ]; then
+    [ -n "$lines_str" ] && lines_str+=", "
+    lines_str+="${RED}-${lines_del}${RST}"
+  fi
+  lines_str+=" ${GRAY}lines${RST}"
+  L1+=" ${SEP} ${lines_str}"
 fi
 
 # Duration (always with seconds)
-[ "$duration_ms" -gt 0 ] && L1+=" ${SEP} ${WHITE}$(fmt_duration "$duration_ms")${RST}"
+[ "$duration_ms" -gt 0 ] && L1+=" ${SEP} ${GRAY}Session${RST} ${WHITE}$(fmt_duration "$duration_ms")${RST}"
 
 # Conditional
 if [ -n "$wt_name" ]; then
@@ -216,6 +270,19 @@ if [ -n "$wt_name" ]; then
   L1+=" ${SEP} ${wt}"
 fi
 [ -n "$agent_name" ] && L1+=" ${SEP} ${BYELLOW}agent:${agent_name}${RST}"
+
+# claude-mem status (real health check)
+cmem_status=""
+cmem_port=$(grep -o '"CLAUDE_MEM_WORKER_PORT"[[:space:]]*:[[:space:]]*"[0-9]*"' "$HOME/.claude-mem/settings.json" 2>/dev/null | grep -o '[0-9]*')
+if [ -n "$cmem_port" ]; then
+  if curl -sf "http://127.0.0.1:${cmem_port}/health" --max-time 1 >/dev/null 2>&1; then
+    cmem_status="${BGREEN}mem:${cmem_port}${RST}"
+  else
+    cmem_status="${BRED}mem:${cmem_port}!${RST}"
+  fi
+else
+  cmem_status="${BRED}mem:off${RST}"
+fi
 
 echo -e "$L1"
 
@@ -238,14 +305,20 @@ fi
 if [ -n "$rl_5h" ]; then
   cd5=$(fmt_countdown "$rl_5h_reset")
   L2+=" ${CYAN}│${RST} ${BBLUE}5 hours${RST} $(make_rate_bar "$rl_5h" 15 "$BLUE" "$BBLUE") $(rate_color_pct "$rl_5h" "$BBLUE")"
-  [ -n "$cd5" ] && L2+=" ${WHITE}reset ${cd5}${RST}"
+  [ -n "$cd5" ] && L2+=" ${WHITE}reset${RST} ${WHITE}${cd5}${RST}"
 fi
 
 # 7 days — purple/magenta theme (width 15)
 if [ -n "$rl_7d" ]; then
   cd7=$(fmt_countdown "$rl_7d_reset")
   L2+=" ${CYAN}│${RST} ${BMAGENTA}7 days${RST} $(make_rate_bar "$rl_7d" 15 "$MAGENTA" "$BMAGENTA") $(rate_color_pct "$rl_7d" "$BMAGENTA")"
-  [ -n "$cd7" ] && L2+=" ${WHITE}reset ${cd7}${RST}"
+  [ -n "$cd7" ] && L2+=" ${WHITE}reset${RST} ${WHITE}${cd7}${RST}"
+fi
+
+# mem health + Claude Code version (moved off line 1 to keep it short)
+L2+=" ${CYAN}│${RST} ${cmem_status}"
+if [ -n "$cc_version" ] && [ "$cc_version" != "null" ]; then
+  L2+=" ${CYAN}│${RST} ${GRAY}v${cc_version}${RST}"
 fi
 
 echo -e "$L2"

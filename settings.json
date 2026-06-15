@@ -1,17 +1,38 @@
 {
+  "cleanupPeriodDays": 3650,
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "CLAUDE_CODE_WORKFLOWS": "1",
+    "DISABLE_GROWTHBOOK": "1",
+    "PYTHONUTF8": "1"
   },
   "permissions": {
     "allow": [
       "Bash(*)",
       "WebFetch(*)",
       "Read",
+      "Glob",
+      "Grep",
       "Edit",
       "Write",
       "Task(*)",
-      "mcp__*",
-      "Skill(*)"
+      "Skill(*)",
+      "mcp__claude-in-chrome",
+      "mcp__claude_ai_Google_Drive",
+      "mcp__claude_ai_Read_AI",
+      "mcp__claude_ai_Vercel",
+      "mcp__claude_ai_Notion",
+      "mcp__supabase",
+      "mcp__plugin_claude-mem_mcp-search",
+      "mcp__plugin_cloudflare_cloudflare-api",
+      "mcp__plugin_cloudflare_cloudflare-bindings",
+      "mcp__plugin_cloudflare_cloudflare-builds",
+      "mcp__plugin_cloudflare_cloudflare-docs",
+      "mcp__plugin_cloudflare_cloudflare-observability",
+      "mcp__plugin_context7_context7",
+      "mcp__plugin_playwright_playwright",
+      "mcp__plugin_superpowers-chrome_chrome"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -28,7 +49,7 @@
       "Bash(git rebase *)"
     ]
   },
-  "model": "haiku",
+  "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -66,8 +87,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:/Users/stans/.claude/hooks/claude-mem-sync.mjs\" download",
-            "timeout": 30
+            "command": "bash \"C:/Users/stans/.claude/hooks/claude-mem-port-sync.sh\"",
+            "timeout": 15
           }
         ]
       },
@@ -82,10 +103,30 @@
         ]
       },
       {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/stans/.claude/hooks/claude-mem-sync.mjs\" download",
+            "timeout": 30
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "http",
             "url": "http://localhost:19280/"
+          }
+        ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"C:/Users/stans/.claude/hooks/claude-mem-context.sh\"",
+            "timeout": 15
           }
         ]
       }
@@ -96,6 +137,15 @@
           {
             "type": "http",
             "url": "http://localhost:19280/"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"C:/Users/stans/.claude/hooks/twify-session-name.py\"",
+            "timeout": 15
           }
         ]
       },
@@ -135,6 +185,15 @@
           {
             "type": "http",
             "url": "http://localhost:19280/"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"C:/Users/stans/.claude/hooks/twify-session-name.py\"",
+            "timeout": 15
           }
         ]
       }
@@ -186,12 +245,20 @@
     "swift-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
-    "double-shot-latte@superpowers-marketplace": true,
+    "double-shot-latte@superpowers-marketplace": false,
     "episodic-memory@superpowers-marketplace": false,
     "superpowers-developing-for-claude-code@superpowers-marketplace": true,
     "superpowers-chrome@superpowers-marketplace": true,
     "claude-session-driver@superpowers-marketplace": false,
-    "claude-mem@thedotmack": true
+    "claude-mem@thedotmack": true,
+    "zeabur@zeabur": true,
+    "project-sweep@stan-local-plugins": true,
+    "document-skills@anthropic-agent-skills": true,
+    "superpowers@superpowers-marketplace": true,
+    "cloudflare@cloudflare": true,
+    "superpowers@claude-plugins-official": true,
+    "claude-api@anthropic-agent-skills": true,
+    "playwright@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "thedotmack": {
@@ -199,11 +266,45 @@
         "source": "github",
         "repo": "thedotmack/claude-mem"
       }
+    },
+    "zeabur": {
+      "source": {
+        "source": "github",
+        "repo": "zeabur/agent-skills"
+      }
+    },
+    "stan-local-plugins": {
+      "source": {
+        "source": "directory",
+        "path": "C:\\Users\\stans\\Projects\\project-sweep-plugin"
+      }
+    },
+    "shyuan-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "shyuan/shyuan-marketplace"
+      }
+    },
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    },
+    "cloudflare": {
+      "source": {
+        "source": "github",
+        "repo": "cloudflare/skills"
+      }
     }
   },
   "language": "中文",
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "autoUpdatesChannel": "latest",
-  "voiceEnabled": true,
-  "autoDreamEnabled": true
+  "autoDreamEnabled": true,
+  "skipWorkflowUsageWarning": true,
+  "theme": "light",
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true,
+  "voiceEnabled": true
 }
